@@ -85,25 +85,25 @@ fetch("/api/logging,  {
 
 ### Retry Behavior Details
 
-- Retries will be attempted from the failed/latest redirect hop. If a `fetch()` request follows HTTP redirects (e.g., 301, 302, 307, 308), any necessary retries are performed against the URL right after the last successful redirect step, not the original URL provided to `fetch()`. For example, if fetch('/a') redirects to /b, and the request to /b subsequently fails with a network error, the retry attempts will target /b, not /a.
--   Retry count header will be sent. To allow servers to identify retry attempts (for logging, debugging, or deduplicating logic), each retry request initiated by the browser will include an additional HTTP header indicating the attempt number.
+- Retries will be **attempted from the failed/latest redirect hop**. If a `fetch()` request follows HTTP redirects (e.g., 301, 302, 307, 308), any necessary retries are performed against the URL right after the last successful redirect step, not the original URL provided to `fetch()`. For example, if fetch('/a') redirects to /b, and the request to /b subsequently fails with a network error, the retry attempts will target /b, not /a.
+-   **Retry count header** will be sent. To allow servers to identify retry attempts (for logging, debugging, or deduplicating logic), each retry request initiated by the browser will include an additional HTTP header indicating the attempt number.
     -   Proposed Header:  `Retry-Attempt` (Exact name TBD during standardization).
     -   Value: An integer representing the current retry attempt number. The first retry would have `Retry-Attempt: 1`, the second `Retry-Attempt: 2`, and so on, up to the value specified in `maxAttempts`.
     -   The initial request (attempt 0) will not include this header.
--   Retries are intended solely for transient network errors where retrying the identical request might succeed. This typically includes errors at the TCP/IP level like connection timeouts, connection resets, connection refused (potentially), or DNS resolution failures if resolution previously succeeded for the host. For example, retries will not be triggered by:
+-   Retries are intended solely for **transient network errors** where retrying the identical request might succeed. This typically includes errors at the TCP/IP level like connection timeouts, connection resets, connection refused (potentially), or DNS resolution failures if resolution previously succeeded for the host. For example, retries will not be triggered by:
     -   Successful HTTP responses, even with error status codes (4xx, 5xx). (Retrying on 5xx could be a future extension).
     -   Programmatic cancellation via `AbortSignal`.
     -   Security-related failures (CORS errors, CSP violations, mixed content blocks).
     -   Errors parsing request components (e.g., invalid URL).
--   We won't retry for non-idempotent method unless explicitly opted in:
+-   We **won't retry for non-idempotent method unless explicitly opted in**:
     -   HTTP methods like GET, HEAD, OPTIONS, PUT, DELETE are generally idempotent (repeating the request has the same effect as making it once). Retrying these methods is generally safe.
     -   Methods like POST (and often PATCH) are non-idempotent. Automatically retrying a POST can lead to unintended consequences like creating duplicate resources or processing a transaction multiple times if the first request succeeded server-side but the response was lost due to network issues.
     -   Safety Proposal: To prevent accidental data corruption, the default behavior should restrict automatic retries to idempotent methods only.
     -   Enabling retries for non-idempotent methods like POST should require an explicit opt-in (e.g., a separate `retryNonIdempotent: true` flag within retryOptions or similar mechanism). Developers opting into retrying non-idempotent requests must ensure their server endpoints are designed to handle potential duplicates gracefully (e.g., using an `Idempotency-Key` header or checking the `Retry-Attempt` header).
--   Error Handling: The `fetch()` promise behaves as follows:
+-   **Only the final result will be exposed**. The `fetch()` promise behaves as follows:
     -   If the initial attempt succeeds, the promise resolves with the `Response`.
     -   If the initial attempt fails but a subsequent retry succeeds, the promise resolves with the `Response` from the successful retry.
-    -   If the initial attempt and all allowed retry attempts fail (due to retryable network errors, hitting `maxAttempts` limit, or exceeding `maxAge`), the promise rejects with the network error (`TypeError`) from the last attempt.
+    -   If the initial attempt and all allowed retry attempts fail (due to retryable network errors, hitting `maxAttempts` limit, or exceeding `maxAge`), the promise rejects with the network error (`TypeError`) from the last attempt. Note that this might happen after the initiator document is unloaded if it's a `keepalive` request, so the initiator script might never know the final result (this is already a possibility even without retry).
 -   The initial proposal does not include a mechanism to expose detailed information about the retry process (e.g., number of attempts made, intermediate errors) back to the client-side JavaScript, although the `Retry-Attempt` header provides information to the server.
 
  Security and Privacy Considerations
