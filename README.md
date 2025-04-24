@@ -3,24 +3,24 @@
 ## Introduction
 
 
-fetch() requests can fail due to transient network errors. Manual JavaScript retries are complex and impossible to be done after page unload (e.g. for keepalive fetches), causing data loss for critical beacons.
+`fetch()` requests can fail due to transient network errors. Manual JavaScript retries are complex and impossible to be done after page unload (e.g. for `keepalive` fetches), causing data loss for critical beacons.
 
-This proposal introduces a configurable, browser-managed retry mechanism within fetch(). It allows web developers to indicate that a fetch() request should be retried, to have a greater guarantee on it being reliably sent, even if the network is flaky. 
+This proposal introduces a configurable, browser-managed retry mechanism within `fetch()`. It allows web developers to indicate that a `fetch()` request should be retried, to have a greater guarantee on it being reliably sent, even if the network is flaky. 
 
 ### Goals
 
--   Improve fetch() reliability on flaky networks, especially for keepalive.
+-   Improve `fetch()` reliability on flaky networks, especially for `keepalive`.
 
 -   Ensure retries occur correctly and in an efficient and controlled manner, even after page unload (when configured)
 
 ### Non-goals
--   Guarantee fetch() delivery (this feature only aims to increase probability of delivery, the request can still fail when we reach our retry limit).
+-   Guarantee `fetch()` delivery. This feature only aims to increase probability of delivery, the request can still fail when we reach our retry limit.
 
 -   Retry automatically without explicit opt-in for the cases that are ok to retry
 
 ## Proposed API
 
-We propose adding a new retryOptions member to the RequestInit dictionary (the optional second argument to fetch()).
+We propose adding a new `retryOptions` member to the `RequestInit` dictionary (the optional second argument to `fetch()`).
 
 ```idl
 // Define the dictionary for retry configuration
@@ -92,7 +92,7 @@ fetch("/api/important-beacon?id=12345",  {
 
 -   `initialDelay`: Time in milliseconds before the first retry attempt.
 
--   `backoffFactor`: Multiplier applied to the delay for subsequent retries (e.g., 2.0 doubles the delay: initialDelay, initialDelay * 2, initialDelay * 4, ...). A factor of 1.0 means fixed delay. Note that browsers should implicitly apply randomization (jitter) to calculated delays to help prevent synchronized retries (thundering herd).
+-   `backoffFactor`: Multiplier applied to the delay for subsequent retries (e.g., 2.0 doubles the delay: `initialDelay`, `initialDelay * 2`, `initialDelay * 4`, ...). A factor of 1.0 means fixed delay. Note that browsers should implicitly apply randomization (jitter) to calculated delays to help prevent synchronized retries (thundering herd).
 
 
 -   `maxAge`: An optional overall time limit in milliseconds, measured from the first failure, after which no further retry attempts will be made, regardless of maxAttempts.
@@ -104,25 +104,25 @@ fetch("/api/important-beacon?id=12345",  {
 
 ### Retry Behavior Details
 
--   Retry from last redirect hop: If a fetch() request follows HTTP redirects (e.g., 301, 302, 307, 308), any necessary retries are performed against the URL right after the last successful redirect step. The browser does not retry the original URL provided to fetch(). For example, if fetch('/a') redirects to /b, and the request to /b subsequently fails with a network error, the retry attempts will target /b, not /a.
+-   Retries will be attempted from the failed/latest redirect hop. If a `fetch()` request follows HTTP redirects (e.g., 301, 302, 307, 308), any necessary retries are performed against the URL right after the last successful redirect step, not the original URL provided to `fetch()`. For example, if fetch('/a') redirects to /b, and the request to /b subsequently fails with a network error, the retry attempts will target /b, not /a.
 
--   Retry count header: To allow servers to identify retry attempts (for logging, debugging, or deduplicating logic), each retry request initiated by the browser will include an additional HTTP header indicating the attempt number.
+-   Retry count header will be sent. To allow servers to identify retry attempts (for logging, debugging, or deduplicating logic), each retry request initiated by the browser will include an additional HTTP header indicating the attempt number.
 
--   Proposed Header:  Retry-Attempt (Exact name TBD during standardization).
+-   Proposed Header:  `Retry-Attempt` (Exact name TBD during standardization).
 
--   Value: An integer representing the current retry attempt number. The first retry would have Retry-Attempt: 1, the second Retry-Attempt: 2, and so on, up to the value specified in maxAttempts.
+-   Value: An integer representing the current retry attempt number. The first retry would have `Retry-Attempt: 1`, the second `Retry-Attempt: 2`, and so on, up to the value specified in `maxAttempts`.
 
 -   The initial request (attempt 0) will not include this header.
 
 -   Retry triggers: Retries are intended solely for transient network errors where retrying the identical request might succeed. This typically includes errors at the TCP/IP level like connection timeouts, connection resets, connection refused (potentially), or DNS resolution failures if resolution previously succeeded for the host. For example, retries will not be triggered by:
 
--   Successful HTTP responses, even with error status codes (4xx, 5xx). (Retrying on 5xx could be a future extension).
+  -   Successful HTTP responses, even with error status codes (4xx, 5xx). (Retrying on 5xx could be a future extension).
 
--   Programmatic cancellation via AbortSignal.
+  -   Programmatic cancellation via `AbortSignal`.
 
--   Security-related failures (CORS errors, CSP violations, mixed content blocks).
+  -   Security-related failures (CORS errors, CSP violations, mixed content blocks).
 
--   Errors parsing request components (e.g., invalid URL).
+  -   Errors parsing request components (e.g., invalid URL).
 
 -   Idempotency:
 
@@ -134,15 +134,15 @@ fetch("/api/important-beacon?id=12345",  {
 
 -   Enabling retries for non-idempotent methods like POST should require an explicit opt-in (e.g., a separate retryNonIdempotent: true flag within retryOptions or similar mechanism) or might be disallowed initially. Developers opting into retrying non-idempotent requests must ensure their server endpoints are designed to handle potential duplicates gracefully (e.g., using an Idempotency-Key header or checking the Retry-Attempt header).
 
--   Error Handling: The fetch() promise behaves as follows:
+-   Error Handling: The `fetch()` promise behaves as follows:
 
--   If the initial attempt succeeds, the promise resolves with the Response.
+ -   If the initial attempt succeeds, the promise resolves with the `Response`.
 
--   If the initial attempt fails but a subsequent retry succeeds, the promise resolves with the Response from the successful retry.
+ -   If the initial attempt fails but a subsequent retry succeeds, the promise resolves with the `Response` from the successful retry.
 
--   If the initial attempt and all allowed retry attempts fail (due to retryable network errors, hitting maxAttempts limit, or exceeding maxAge), the promise rejects with the network error (TypeError) from the last attempt.
+ -   If the initial attempt and all allowed retry attempts fail (due to retryable network errors, hitting `maxAttempts` limit, or exceeding `maxAge`), the promise rejects with the network error (`TypeError`) from the last attempt.
 
--   The initial proposal does not include a mechanism to expose detailed information about the retry process (e.g., number of attempts made, intermediate errors) back to the client-side JavaScript, although the Retry-Attempt header provides information to the server.
+-   The initial proposal does not include a mechanism to expose detailed information about the retry process (e.g., number of attempts made, intermediate errors) back to the client-side JavaScript, although the `Retry-Attempt` header provides information to the server.
 
 Existing Ways to Retry Fetches
 ------------------------------
@@ -151,11 +151,11 @@ Existing Ways to Retry Fetches
 
 -   Limitations: Requires boilerplate code, potentially complex to manage state correctly. Critically fails for keepalive requests as the JavaScript context is unavailable to handle retries after page unload. This will also retry from the initial URL only, and not the last redirect hops as proposed, since redirects are invisible (except if the fetch user uses redirect: manual, which can be opaque if it's cross-origin)
 
-3.  Service Workers: Can intercept fetch events using an event listener. This allows for implementing custom, sophisticated retry logic, potentially including offline queueing.
+2.  Service Workers: Can intercept fetch events using an event listener. This allows for implementing custom, sophisticated retry logic, potentially including offline queueing.
 
 -   Limitations: Involves the complexity of Service Worker registration, lifecycle management, and communication. While powerful, it's significant overhead for simple retry needs. Reliably handling keepalive fetches intercepted just before unload requires careful SW design.
 
-5.  Background Sync API: Allows deferring work until the browser detects stable network connectivity, managed via the Service Worker.
+3.  Background Sync API: Allows deferring work until the browser detects stable network connectivity, managed via the Service Worker.
 
 -   Limitations: Designed for offline tolerance and synchronization, typically involving longer delays (minutes, with browser-controlled backoff) than desired for immediate retries of transient network errors. Not suitable for near-real-time beaconing scenarios where a quick retry is preferred.
 
@@ -177,7 +177,7 @@ Existing Ways to Retry Fetches
 Potential extensions
 ====================
 
--   Configurable Retry Triggers: Allow opting into retries on specific HTTP 5xx server error status codes (e.g., retryOnStatusCodes: [503, 504]). This would need careful consideration due to potential server load implications.
+-   Configurable Retry Triggers: Allow opting into retries on specific HTTP 5xx server error status codes (e.g., `retryOnStatusCodes: [503, 504]`). This would need careful consideration due to potential server load implications.
 
 -   Expose Retry Metadata to Client: Provide information back to the client-side JavaScript about the retry process, such as the final number of attempts made or the specific error on the last try, perhaps via properties on the resolved Response or the rejected Error.
 
