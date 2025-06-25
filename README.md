@@ -19,29 +19,36 @@ This proposal introduces a configurable, browser-managed retry mechanism within 
 
 We propose adding a new `retryOptions` member to the `RequestInit` dictionary (the optional second argument to `fetch()`).
 
-```idl
+```webidl
 // Define the dictionary for retry configuration
 dictionary  RetryOptions  {
   // Required: Maximum number of retry attempts after the initial one fails.
-  unsigned  long  maxAttempts;
+  [EnforceRange] required unsigned long long maxAttempts;
 
   // Optional: Delay before the first retry attempt (milliseconds).
-  unsigned long  initialDelay;
+  [EnforceRange] unsigned long long initialDelay;
 
   // Optional: Multiplier for increasing delay between retries (e.g., 2.0 for doubling).
-  double  backoffFactor;
+  double backoffFactor;
 
   // Optional: Maximum total time allowed for all retry attempts (milliseconds from the first failure).
-  unsigned  long  maxAge;
+  [EnforceRange] unsigned long long maxAge;
 
-  // Optional: Controls if retries can continue after document unload.
+  // Optional: Controls if retries can be attempted after document unload.
   // Requires `keepalive: true` on the fetch request to be effective.
-  boolean  retryAfterUnload;
+  //  Defaults to false.
+  boolean retryAfterUnload;
+
+  // Optional: Specifies whether to retry when the HTTP request method is
+  // non-idempotent (e.g. POST, PUT, DELETE). If this is not set while the HTTP
+  // request method of the fetch is non-idempotent, no retry will be attempted.
+  // Defaults to false.
+  boolean retryNonIdempotent;
 };
 
 // Extend the existing RequestInit dictionary
 partial  dictionary  RequestInit  {
-  [SecureContext]  RetryOptions?  retryOptions;
+  [SecureContext]  RetryOptions retryOptions;
 
 };
 
