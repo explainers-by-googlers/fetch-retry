@@ -21,7 +21,7 @@ We propose adding a new `retryOptions` member to the `RequestInit` dictionary (t
 
 ```webidl
 // Define the dictionary for retry configuration
-dictionary  RetryOptions  {
+dictionary RetryOptions {
   // Required: Maximum number of retry attempts after the initial one fails.
   [EnforceRange] required unsigned long long maxAttempts;
 
@@ -47,33 +47,34 @@ dictionary  RetryOptions  {
 };
 
 // Extend the existing RequestInit dictionary
-partial  dictionary  RequestInit  {
-  [SecureContext]  RetryOptions retryOptions;
+partial  dictionary  RequestInit {
+  [SecureContext] RetryOptions retryOptions;
 
 };
-
+```
+```js
 // --- Example Usage ---
 
 fetch("/api/important-beacon?id=12345",  {
-  method:  "GET",
-  keepalive:  true, // Essential for retryAfterUnload: true
+  method: "GET",
+  keepalive: true, // Essential for retryAfterUnload: true
   retryOptions:  {
-    maxAttempts:  3,        // Max 3 retries (4 total attempts)
-    initialDelay:  500,    // Start with 500ms delay
-    backoffFactor:  2.0, // Double delay each time (500ms, 1s, 2s)
-    maxAge:  60000,        // Give up after 60 seconds total retry time
-    retryAfterUnload:  true  // Allow retries to continue even if page closes
+    maxAttempts: 3,        // Max 3 retries (4 total attempts)
+    initialDelay: 500,    // Start with 500ms delay
+    backoffFactor: 2.0, // Double delay each time (500ms, 1s, 2s)
+    maxAge: 60000,        // Give up after 60 seconds total retry time
+    retryAfterUnload: true  // Allow retries to continue even if page closes
   }
 });
 
 fetch("/api/logging,  {
-  method:  "POST",
+  method: "POST",
   body: data,
-  keepalive:  true, // Essential for retryAfterUnload: true
-  retryOptions:  {
-    maxAttempts:  5,        // Max 5 retries (6 total attempts)
+  keepalive: true, // Essential for retryAfterUnload: true
+  retryOptions: {
+    maxAttempts: 5,        // Max 5 retries (6 total attempts)
     retryNonIdempotent: true  // Required to allow retrying POST
-    // Use dfault value for the retry delay etc.
+    // Use default value for the retry delay etc.
   }
 });
 ```
@@ -92,11 +93,14 @@ fetch("/api/logging,  {
 
 ### Retry Behavior Details
 
-- Retries will be **attempted from the failed/latest redirect hop**. If a `fetch()` request follows HTTP redirects (e.g., 301, 302, 307, 308), any necessary retries are performed against the URL right after the last successful redirect step, not the original URL provided to `fetch()`. For example, if fetch('/a') redirects to /b, and the request to /b subsequently fails with a network error, the retry attempts will target /b, not /a.
--   **Retry count header** will be sent. To allow servers to identify retry attempts (for logging, debugging, or deduplicating logic), each retry request initiated by the browser will include an additional HTTP header indicating the attempt number.
-    -   Proposed Header:  `Retry-Attempt` (Exact name TBD during standardization).
-    -   Value: An integer representing the current retry attempt number. The first retry would have `Retry-Attempt: 1`, the second `Retry-Attempt: 2`, and so on, up to the value specified in `maxAttempts`.
-    -   The initial request (attempt 0) will not include this header.
+- Retries will be **attempted from the original URL & fetch params**. If a `fetch()` request follows HTTP redirects (e.g., 301, 302, 307, 308), any necessary retries are performed against the original URL & fetch params provided to `fetch()`. For example, if fetch('/a') redirects to `/b`, and the request to `/b` subsequently fails with a network error, the retry attempts will target `/a`, not `/b`.
+-   **Retry count & GUID headers** will be sent. To allow servers to identify retry attempts (for logging, debugging, or deduplicating logic), each retry request initiated by the browser will include an additional HTTP header indicating the attempt number.
+    -   `Retry-Attempts`
+        -   Value: An integer representing the current retry attempt number. The first retry would have `Retry-Attempts: 1`, the second `Retry-Attempts: 2`, and so on, up to the value specified in `maxAttempts`.
+        -   The initial request (attempt 0) will not include this header.
+    -   `Retry-GUID`
+        -   Value: A GUID string uniquely identifying the fetch call the 
+        -   The initial request and all retries will include this header. Only fetches that has a retryOptions set will use
 -   Retries are intended solely for **transient network errors** where retrying the identical request might succeed. This typically includes errors at the TCP/IP level like connection timeouts, connection resets, connection refused (potentially), or DNS resolution failures if resolution previously succeeded for the host. For example, retries will not be triggered by:
     -   Successful HTTP responses, even with error status codes (4xx, 5xx). (Retrying on 5xx could be a future extension).
     -   Programmatic cancellation via `AbortSignal`.
@@ -134,7 +138,7 @@ Potential extensions
 Appendix: Existing Ways to Retry Fetches
 ------------------------------
 1.  Manual JavaScript Retry Logic: Developers write `try...catch` blocks, manage `setTimeout` for delays (often implementing exponential backoff), and track attempt counts.
-    -   Limitations: Requires boilerplate code, potentially complex to manage state correctly. Doesn't work for `keepalive` requests as the JavaScript context is unavailable to handle retries after page unload. This will also retry from the initial URL only, and not the last redirect hops as proposed, since redirects are invisible (except if the fetch user uses `redirect: manual`, but even so, the redirect URL can be opaque if it's cross-origin, and redirect handling can't work)
+    -   Limitations: Requires boilerplate code, potentially complex to manage state correctly. Doesn't work for `keepalive` requests as the JavaScript context is unavailable to handle retries after page unload.
 2.  Service Workers: Can intercept fetch events using an event listener. This allows for implementing custom, sophisticated retry logic, potentially including offline queueing.
     -   Limitations: Involves the complexity of Service Worker registration, lifecycle management, and communication. While powerful, it's significant overhead for simple retry needs. Reliably handling keepalive fetches intercepted just before unload requires careful SW design.
 3.  Background Sync API: Allows deferring work until the browser detects stable network connectivity, managed via the Service Worker.
