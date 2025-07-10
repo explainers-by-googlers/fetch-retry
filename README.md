@@ -13,7 +13,7 @@ This proposal introduces a configurable, browser-managed retry mechanism within 
 
 ### Non-goals
 -   Guarantee `fetch()` delivery. This feature only aims to increase probability of delivery, the request can still fail when we reach our retry limit.
--   Retry automatically without explicit opt-in for the cases that are ok to retry
+-   Retry automatically without explicit opt-in for what cases that are ok to retry
 
 ## Proposed API
 
@@ -86,9 +86,9 @@ fetch("/api/logging,  {
 -   `initialDelay`: Time in milliseconds before the first retry attempt.
 -   `backoffFactor`: Multiplier applied to the delay for subsequent retries (e.g., 2.0 doubles the delay: `initialDelay`, `initialDelay * 2`, `initialDelay * 4`, ...). A factor of 1.0 means fixed delay. Note that browsers should implicitly apply randomization (jitter) to calculated delays to help prevent synchronized retries (thundering herd).
 -   `maxAge`: An optional overall time limit in milliseconds, measured from the first failure, after which no further retry attempts will be made, regardless of maxAttempts.
--   `retryAfterUnload`:   Controls whether the browser should continue attempting retries even after the originating document (page/tab) has been unloaded.  Crucially, setting this to true requires keepalive: true to be set on the same `fetch()` call. The keepalive flag provides the mechanism for the request to outlive the document; `retryAfterUnload: true` leverages this to allow retries to also outlive the document.
+-   `retryAfterUnload`:   Controls whether the browser should continue attempting retries even after the originating document (page/tab) has been unloaded, but only if a same-network-isolation-key document is active in the same browsing session.  Crucially, setting this to true requires keepalive: true to be set on the same `fetch()` call. The keepalive flag provides the mechanism for the request to outlive the document; `retryAfterUnload: true` leverages this to allow retries to also outlive the document.
     -   If `keepalive: false`, setting `retryAfterUnload: true` will likely have no effect or be considered invalid, as the browser typically aborts standard requests on unload.
-    -   The default value could potentially be linked to the keepalive value (e.g., defaults to true if keepalive is true, false otherwise), or it could default to false requiring explicit opt-in. This needs discussion.
+    -   **Important point for privacy**: Even though this allows retry after the original document is unloaded, it requires that a document with the same network isolation key as the original initiator of the fetch is active in the same browsing session. If there is no such document, a retry will not be attempted, and it will wait until such a document becomes active (e.g. through navigation). This is important because we don't want the retry network requests to leak information about the network that the user is on. If the user has an active document with the same network isolation key, this is not a problem, since that document itself is able to initiate a similar fetch.
 - `retryNonIdempotent`: Required to be set to true for non-idempotent HTTP methods for the retry to actually happen
 
 ### Retry Behavior Details
@@ -101,11 +101,9 @@ fetch("/api/logging,  {
     -   `Retry-GUID`
         -   Value: A GUID string uniquely identifying the fetch call the 
         -   The initial request and all retries will include this header. Only fetches that has a retryOptions set will use
--   Retries are intended solely for **transient network errors** where retrying the identical request might succeed. This typically includes errors at the TCP/IP level like connection timeouts, connection resets, connection refused (potentially), or DNS resolution failures if resolution previously succeeded for the host. For example, retries will not be triggered by:
-    -   Successful HTTP responses, even with error status codes (4xx, 5xx). (Retrying on 5xx could be a future extension).
+-   Retries are attempted for **all network errors** where retrying the identical request might succeed. This includes policy-related network errors, as it's important that we don't differentiate how we handle that vs non-policy related errors, to not leak information (e.g. through observing whether a retry happens or not from the difference in the time it takes). See also [thread](https://github.com/whatwg/fetch/issues/1838#issuecomment-3019404094). Retries will not be triggered by:
+    -   Successful HTTP responses, even with error status codes (4xx, 5xx).
     -   Programmatic cancellation via `AbortSignal`.
-    -   Security-related failures (CORS errors, CSP violations, mixed content blocks).
-    -   Errors parsing request components (e.g., invalid URL).
 -   We **won't retry for non-idempotent method unless explicitly opted in**:
     -   HTTP methods like GET, HEAD, OPTIONS, PUT, DELETE are generally idempotent (repeating the request has the same effect as making it once). Retrying these methods is generally safe.
     -   Methods like POST (and often PATCH) are non-idempotent. Automatically retrying a POST can lead to unintended consequences like creating duplicate resources or processing a transaction multiple times if the first request succeeded server-side but the response was lost due to network issues.
@@ -127,19 +125,28 @@ fetch("/api/logging,  {
 -   Standard Fetch Security: Each retry attempt must adhere to all standard web platform security policies, including CORS (preflights may need re-validation depending on timing/caching), CSP, credential handling, mixed content blocking, etc.
 -   Retrying After Unload: Users might not expect that a fetch can run in the background after the initiator document has been unloaded. To mitigate this, we will only allow retry attempts when a fully active document with the same network isolation key as the initiator document exists. If a scheduled retry is triggered when there is no such document, it will wait until a document with the same network isolation key becomes fully active.
 
-Potential extensions
-====================
-
--   Configurable Retry Triggers: Allow opting into retries on specific HTTP 5xx server error status codes (e.g., `retryOnStatusCodes: [503, 504]`). This would need careful consideration due to potential server load implications.
--   Expose Retry Metadata to Client: Provide information back to the client-side JavaScript about the retry process, such as the final number of attempts made or the specific error on the last try, perhaps via properties on the resolved Response or the rejected Error.
--   Retry for HTML Elements: Explore extending a similar declarative mechanism to resource-loading HTML elements (`<img>`, `<link rel="stylesheet">`, `<script>`) to improve page resilience.
-
-
 Appendix: Existing Ways to Retry Fetches
-------------------------------
+========================================
 1.  Manual JavaScript Retry Logic: Developers write `try...catch` blocks, manage `setTimeout` for delays (often implementing exponential backoff), and track attempt counts.
     -   Limitations: Requires boilerplate code, potentially complex to manage state correctly. Doesn't work for `keepalive` requests as the JavaScript context is unavailable to handle retries after page unload.
 2.  Service Workers: Can intercept fetch events using an event listener. This allows for implementing custom, sophisticated retry logic, potentially including offline queueing.
     -   Limitations: Involves the complexity of Service Worker registration, lifecycle management, and communication. While powerful, it's significant overhead for simple retry needs. Reliably handling keepalive fetches intercepted just before unload requires careful SW design.
 3.  Background Sync API: Allows deferring work until the browser detects stable network connectivity, managed via the Service Worker.
     -   Limitations: Designed for offline tolerance and synchronization, typically involving longer delays (minutes, with browser-controlled backoff) than desired for immediate retries of transient network errors. Not suitable for near-real-time beaconing scenarios where a quick retry is preferred.
+
+
+Appendix: Difference with other APIs
+=====================================
+In [discussions](https://github.com/whatwg/fetch/issues/1838#issuecomment-3020408525), a question came up on how this is different from [Extended Lifetime SharedWorkers](https://gist.github.com/domenic/c5bd38339f33b49120ae11b3b4af5b9b).
+Both proposals are around trying to minimize "data loss of critical beacons", but they are tackling different problems. The Extended Lifetime SharedWorkers proposal is more about "we need to run some arbitrary operations after unload, with stricter bounded time":
+- It can run arbitrary operations such as writing to storage, etc.
+- It will only run once, and needs to stop quite soon after the document unload (compared to fetch retry)
+- Like mentioned in this [section](this section), they're also useful when async steps are required
+
+Meanwhile fetch retry is about "Try to ensure that this fetch gets sent, even if it takes a while":
+- It's specific to fetches
+- It's meant to make the fetches more resilent to potentially transient errors, which are actually quite common.
+- The retry can be triggered quite a bit after the document is unloaded, but in such a way that isn't a problem privacy wise (only retrying when a same-NetworkIsolationKey document is committed).
+- The retry can also be attempted when the document is still around
+
+So the former is more around "making sure an operation is run, after potentially some async work" while the latter is more "fetches are more resilient to transient errors and have a higher chance of reaching the server". They can work together too, e.g. we can maybe trigger a fetch with retry from the worker and that makes sure it's attempted and with a higher chance of it actually getting through.
