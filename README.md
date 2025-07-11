@@ -39,9 +39,8 @@ dictionary RetryOptions {
   //  Defaults to false.
   boolean retryAfterUnload;
 
-  // Optional: Specifies whether to retry when the HTTP request method is
-  // non-idempotent (e.g. POST, PUT, DELETE). If this is not set while the HTTP
-  // request method of the fetch is non-idempotent, no retry will be attempted.
+  // Optional: Specifies whether to retry when the HTTP request method is non-idempotent (e.g. POST).
+  // If this is not set while the HTTP request method of the fetch is non-idempotent, no retry will be attempted.
   // Defaults to false.
   boolean retryNonIdempotent;
 };
