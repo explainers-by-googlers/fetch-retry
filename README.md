@@ -66,7 +66,7 @@ fetch("/api/important-beacon?id=12345",  {
   }
 });
 
-fetch("/api/logging,  {
+fetch("/api/logging",  {
   method: "POST",
   body: data,
   keepalive: true, // Essential for retryAfterUnload: true
