@@ -23,7 +23,7 @@ We propose adding a new `retryOptions` member to the `RequestInit` dictionary (t
 // Define the dictionary for retry configuration
 dictionary RetryOptions {
   // Required: Maximum number of retry attempts after the initial one fails.
-  [EnforceRange] required unsigned long long maxAttempts;
+  [EnforceRange] required unsigned short maxAttempts;
 
   // Optional: Delay before the first retry attempt (milliseconds).
   [EnforceRange] unsigned long long initialDelay;
@@ -31,7 +31,7 @@ dictionary RetryOptions {
   // Optional: Multiplier for increasing delay between retries (e.g., 2.0 for doubling).
   double backoffFactor;
 
-  // Optional: Maximum total time allowed for all retry attempts (milliseconds from the first failure).
+  // Maximum total time allowed for all retry attempts (milliseconds from initial request start).
   [EnforceRange] unsigned long long maxAge;
 
   // Optional: Controls if retries can be attempted after document unload.
@@ -93,16 +93,11 @@ fetch("/api/logging",  {
 ### Retry Behavior Details
 
 - Retries will be **attempted from the original URL & fetch params**. If a `fetch()` request follows HTTP redirects (e.g., 301, 302, 307, 308), any necessary retries are performed against the original URL & fetch params provided to `fetch()`. For example, if fetch('/a') redirects to `/b`, and the request to `/b` subsequently fails with a network error, the retry attempts will target `/a`, not `/b`.
--   **Retry count & GUID headers** will be sent. To allow servers to identify retry attempts (for logging, debugging, or deduplicating logic), each retry request initiated by the browser will include an additional HTTP header indicating the attempt number.
-    -   `Retry-Attempts`
-        -   Value: An integer representing the current retry attempt number. The first retry would have `Retry-Attempts: 1`, the second `Retry-Attempts: 2`, and so on, up to the value specified in `maxAttempts`.
-        -   The initial request (attempt 0) will not include this header.
-    -   `Retry-GUID`
-        -   Value: A GUID string uniquely identifying the fetch call the 
-        -   The initial request and all retries will include this header. Only fetches that has a retryOptions set will use
--   Retries are attempted for **all network errors** where retrying the identical request might succeed. This includes policy-related network errors, as it's important that we don't differentiate how we handle that vs non-policy related errors, to not leak information (e.g. through observing whether a retry happens or not from the difference in the time it takes). See also [thread](https://github.com/whatwg/fetch/issues/1838#issuecomment-3019404094). Retries will not be triggered by:
+-   Retries are intended solely for **transient network errors** where retrying the identical request might succeed. This typically includes errors at the TCP/IP level like connection timeouts, connection resets, connection refused (potentially), or DNS resolution failures if resolution previously succeeded for the host. For example, retries will not be triggered by:
     -   Successful HTTP responses, even with error status codes (4xx, 5xx).
     -   Programmatic cancellation via `AbortSignal`.
+    -   Security-related failures (CORS errors, CSP violations, mixed content blocks).
+-  However, to prevent timing attacks that leaks information about whether a network error is policy related (which will not be retried) or not (which might be retried), all network errors will only be surfaced when the navigation reaches the max age. This makes it impossible to tell from the script whether a retry have been attempted or not, since the fetch promise will be rejected at the same timing. See also [thread](https://github.com/whatwg/fetch/issues/1838#issuecomment-3069011754).
 -   We **won't retry for non-idempotent method unless explicitly opted in**:
     -   HTTP methods like GET, HEAD, OPTIONS, PUT, DELETE are generally idempotent (repeating the request has the same effect as making it once). Retrying these methods is generally safe.
     -   Methods like POST (and often PATCH) are non-idempotent. Automatically retrying a POST can lead to unintended consequences like creating duplicate resources or processing a transaction multiple times if the first request succeeded server-side but the response was lost due to network issues.
