@@ -46,7 +46,8 @@ dictionary RetryOptions {
 
   // Optional: Specifies whether to retry when the network request is guaranteed
   // to have not reach the server yet (e.g. a connection can't be established).
-  boolean retryOnlyIfServerUnreached = false;
+  // Defaults to false.
+  boolean retryOnlyIfServerUnreached;
 };
 
 // Extend the existing RequestInit dictionary
@@ -99,7 +100,7 @@ fetch("/api/logging",  {
 ### Retry Behavior Details
 
 - Retries will be **attempted from the original URL & fetch params**. If a `fetch()` request follows HTTP redirects (e.g., 301, 302, 307, 308), any necessary retries are performed against the original URL & fetch params provided to `fetch()`. For example, if fetch('/a') redirects to `/b`, and the request to `/b` subsequently fails with a network error, the retry attempts will target `/a`, not `/b`.
--   Retries are intended solely for **transient network errors** where retrying the identical request might succeed. This typically includes errors at the TCP/IP level like connection timeouts, connection resets, connection refused (potentially), or DNS resolution failures if resolution previously succeeded for the host. For example, retries will not be triggered by:
+-   Retries are intended solely for **transient network errors** where retrying the identical request might succeed. This typically includes errors at the TCP/IP level like connection timeouts, connection resets, connection refused (potentially), or DNS resolution failures if resolution previously succeeded for the host (this is an even smaller set if `retryOnlyIfServerUnreached` is set to true, where we only retry if we guarantee no connection has been established with the server yet). For example, retries will not be triggered by:
     -   Successful HTTP responses, even with error status codes (4xx, 5xx).
     -   Programmatic cancellation via `AbortSignal`.
     -   Security-related failures (CORS errors, CSP violations, mixed content blocks).
