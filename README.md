@@ -43,6 +43,10 @@ dictionary RetryOptions {
   // If this is not set while the HTTP request method of the fetch is non-idempotent, no retry will be attempted.
   // Defaults to false.
   boolean retryNonIdempotent;
+
+  // Optional: Specifies whether to retry when the network request is guaranteed
+  // to have not reach the server yet (e.g. a connection can't be established).
+  boolean retryOnlyIfServerUnreached = false;
 };
 
 // Extend the existing RequestInit dictionary
@@ -62,7 +66,8 @@ fetch("/api/important-beacon?id=12345",  {
     initialDelay: 500,    // Start with 500ms delay
     backoffFactor: 2.0, // Double delay each time (500ms, 1s, 2s)
     maxAge: 60000,        // Give up after 60 seconds total retry time
-    retryAfterUnload: true  // Allow retries to continue even if page closes
+    retryAfterUnload: true,  // Allow retries to continue even if page closes
+    retryOnlyIfServerUnreached: false // Retry on all kinds of transient network errors
   }
 });
 
@@ -89,6 +94,7 @@ fetch("/api/logging",  {
     -   If `keepalive: false`, setting `retryAfterUnload: true` will likely have no effect or be considered invalid, as the browser typically aborts standard requests on unload.
     -   **Important point for privacy**: Even though this allows retry after the original document is unloaded, it requires that a document with the same network isolation key as the original initiator of the fetch is active in the same browsing session. If there is no such document, a retry will not be attempted, and it will wait until such a document becomes active (e.g. through navigation). This is important because we don't want the retry network requests to leak information about the network that the user is on. If the user has an active document with the same network isolation key, this is not a problem, since that document itself is able to initiate a similar fetch.
 - `retryNonIdempotent`: Required to be set to true for non-idempotent HTTP methods for the retry to actually happen
+- `retryOnlyIfServerUnreached`: If set to true, only retry when the network error encountered indicates that a connection hasn't been established yet with the server. This is useful in case the server doesn't have deduplication support.
 
 ### Retry Behavior Details
 
