@@ -114,6 +114,9 @@ fetch("/api/logging",  {
     -   If the initial attempt succeeds, the promise resolves with the `Response`.
     -   If the initial attempt fails but a subsequent retry succeeds, the promise resolves with the `Response` from the successful retry.
     -   If the initial attempt and all allowed retry attempts fail (due to retryable network errors, hitting `maxAttempts` limit, or exceeding `maxAge`), the promise rejects with the network error (`TypeError`) from the last attempt. Note that this might happen after the initiator document is unloaded if it's a `keepalive` request, so the initiator script might never know the final result (this is already a possibility even without retry).
+-   **The retry can outlive the initiator document**
+    -   As long as there is an existing same-NetworkIsolationKey document around the retry can be attempted, after it reached or surpassed the specified delay. This means it can stay around and wait for such a document to become available for a long time, until `maxAge` is reached.
+    -   If a `keepalive` or `fetchLater()` fetch failed while the initiator document is already unloaded, the retry will only be attempted when an existing same-NetworkIsolationKey document exists.
 -   The initial proposal does not include a mechanism to expose detailed information about the retry process (e.g., number of attempts made, intermediate errors) back to the client-side JavaScript, although the `Retry-Attempt` header provides information to the server.
 
  Security and Privacy Considerations
